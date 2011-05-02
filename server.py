@@ -38,9 +38,9 @@ class Server(object):
     def __init__(self):
         self.bind_to = ('127.0.0.1', 8080)
         self.socket = None
-        self.start_servers = 5
-        self.max_spare_servers = 5
-        self.min_spare_servers = 2
+        self.start_servers = 2
+        self.max_spare_servers = 10
+        self.min_spare_servers = 5
         self.max_clients = 250
         self.max_request_per_child = 100
         self.workers = set()

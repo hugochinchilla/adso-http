@@ -8,7 +8,7 @@ from stat import *
 import sendfile
 
 
-document_root = "/home/hugo/Escritorio/adsohttp/www"
+document_root = "/home/hugo/projects/adso-http/www"
 
 def respuesta(sock):
 	try:
