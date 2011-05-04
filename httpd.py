@@ -6,9 +6,8 @@ import socket
 import os
 from stat import *
 import sendfile
-
-
-document_root = "/home/hugo/projects/adso-http/www"
+import mimetypes
+from settings import DOCUMENT_ROOT as document_root
 
 def respuesta(sock):
 	try:
@@ -29,9 +28,14 @@ def respuesta(sock):
 			try:
 				FILE = open(filename, "rb")
 				#print "Sending", filename
-				size = os.stat(filename)[ST_SIZE]
 				OUT.write("HTTP/1.0 200 Va be\r\n")
-				OUT.write("Content-Length: %d\r\n\r\n" % size)
+				last_modified = os.stat(filename)[ST_MTIME]
+				OUT.write("Last-Modified: %s \r\n" % last_modified)
+				content_type = mimetypes.guess_type(filename)
+				OUT.write("Content-Type: %s\r\n" % content_type[0])
+				size = os.stat(filename)[ST_SIZE]
+				OUT.write("Content-Length: %s\r\n\r\n" % size)
+
 				OUT.flush()
 				sendfile.sendfile(OUT.fileno(), FILE.fileno(), 0, size)
 					
