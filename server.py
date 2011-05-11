@@ -14,24 +14,24 @@ class ActivePool(object):
     def __init__(self):
         self.mgr = Manager()
         self.active = self.mgr.list()
-        self.lock = Lock()
+        self.sem = Semaphore(1)
         
     def get_active(self):
-        with self.lock:
+        with self.sem:
             return self.active
         
     def make_active(self, name):
-        with self.lock:
+        with self.sem:
             print "%s comes in" % name
             self.active.append(name)
             
     def make_inactive(self, name):
-        with self.lock:
+        with self.sem:
             print "%s comes out" % name
             self.active.remove(name)
             
     def __str__(self):
-        with self.lock:
+        with self.sem:
             return str(self.active)
 
 
@@ -75,11 +75,11 @@ class Server(object):
             while True: #req_completed < self.max_request_per_child:
                 with lock:
                     conn,addr = self.socket.accept()
-                #pool.make_active(this.name)
+                pool.make_active(this.name)
                 
                 response(conn)
                 conn.close()
-                #pool.make_inactive(this.name)
+                pool.make_inactive(this.name)
                 req_completed += 1
         except Exception, e:
             print "ERROR %s\titer: %s, addr: %s" % (this.name,req_completed,addr)
@@ -91,26 +91,24 @@ class Server(object):
     def manage_pool(self):
         #print self.pool
         
-        """
+
         for w in self.workers.copy():
             if not w.is_alive():
                 w.terminate()
                 w.join()
                 self.workers.remove(w)
                 print "Terminated %s: %s" % (w.name, self.pool)
-        """
-        """
+
         while self.count_spare_servers() < self.min_spare_servers:
             self.spawn()
-        """
-        """
+
         while self.count_spare_servers() > self.max_spare_servers:
             for w in self.workers:
                 if w.name not in self.pool.get_active():
                     w.terminate()
                     w.join()
                     break
-        """
+
             
     def spawn(self):
         w = Process(target=self.worker_process, args=(self.pool, self.lock))

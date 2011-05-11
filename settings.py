@@ -1,1 +1,1 @@
-DOCUMENT_ROOT = '/home/hugo/projects/adso-http/www'
+DOCUMENT_ROOT = '/home/andreu/adso-http/www'
