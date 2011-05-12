@@ -5,7 +5,8 @@ import socket
 import os
 import time
 
-from multiprocessing import Process, Lock, Manager, Semaphore, current_process
+from Queue import Empty
+from multiprocessing import Process, Manager, Semaphore, Queue, current_process
 
 from httpd import respuesta as response
 
@@ -22,17 +23,29 @@ class ActivePool(object):
         
     def make_active(self, name):
         with self.sem:
-            print "%s comes in" % name
+            #print "%s comes in" % name
             self.active.append(name)
             
     def make_inactive(self, name):
         with self.sem:
-            print "%s comes out" % name
+            #print "%s comes out" % name
             self.active.remove(name)
             
     def __str__(self):
         with self.sem:
             return str(self.active)
+            
+class Worker(Process):
+    def init(self, *args, **kwargs):
+        super(Process, self).__init__(*args, **kwargs)
+        self.keep_running = True
+
+        
+    def stop(self):
+        print self.keep_running
+        self.keep_running = False
+        print self.keep_running
+        print "Going to stop"
 
 
 class Server(object):
@@ -40,17 +53,21 @@ class Server(object):
         # self.CONNECTION_OPENED = 'opened'
         # self.CONNECTION_CLOSED = 'closed'
         # self.MAX_REQUESTS_REACHED = 'reached'
-        
         self.bind_to = ('127.0.0.1', 8080)
         self.socket = None
+        
+        self.mngr = Manager()
         self.start_servers = 2
         self.min_spare_servers = 5
-        self.max_spare_servers = 10
+        self.max_spare_servers = 12
         self.max_clients = 250
-        self.max_request_per_child = 100
-        self.workers = set()
+        self.max_request_per_child = 1000
+        self.workers= set()
+        self.queue = Queue()
         self.pool = ActivePool()
-        self.lock = Semaphore(1)
+        self.sem = Semaphore(1)
+        self.flags = self.mngr.dict()
+        self.keep_running = True
         
     def serve(self):
         self.init_socket()
@@ -67,56 +84,58 @@ class Server(object):
         self.socket.bind(self.bind_to)
         self.socket.listen(1)
         
-    def worker_process(self, pool, lock=None):
+    def worker_process(self, pool, sem, queue, flags):
         this = current_process()
         req_completed = 0
         
-        try:
-            while True: #req_completed < self.max_request_per_child:
-                with lock:
-                    conn,addr = self.socket.accept()
-                pool.make_active(this.name)
-                
+        while flags[this.pid] and req_completed < self.max_request_per_child:
+            conn,addr = self.socket.accept()
+            pool.make_active(this.name)
+            try:
                 response(conn)
-                conn.close()
-                pool.make_inactive(this.name)
-                req_completed += 1
-        except Exception, e:
-            print "ERROR %s\titer: %s, addr: %s" % (this.name,req_completed,addr)
-            raise e
-
-        print "%s: max requests processed" % this.name
-        return
-            
-    def manage_pool(self):
-        #print self.pool
+            except:
+                print "Invalid request"
+            conn.close()
+            pool.make_inactive(this.name)
+            req_completed += 1
         
-
+        if not flags[this.pid]:
+            print "%s terminated by parent" % this.pid
+        queue.put(this.pid)
+        
+    def manage_pool(self):
+        try:
+            pid = self.queue.get(True, 1)
+        except Empty:
+            # we want to force the code below to be executed
+            # at least once every second
+            pass
+        
         for w in self.workers.copy():
             if not w.is_alive():
-                w.terminate()
                 w.join()
                 self.workers.remove(w)
-                print "Terminated %s: %s" % (w.name, self.pool)
 
         while self.count_spare_servers() < self.min_spare_servers:
             self.spawn()
 
-        while self.count_spare_servers() > self.max_spare_servers:
-            for w in self.workers:
-                if w.name not in self.pool.get_active():
-                    w.terminate()
-                    w.join()
-                    break
+        kill_workers = self.count_spare_servers() - self.max_spare_servers
+        print (self.count_spare_servers(), kill_workers)
+
+        if kill_workers > 0:
+            worker_list = [w for w in self.workers]
+            for i in range(kill_workers):
+                pid = worker_list[i].pid
+                print "terminate order givven to %s" % pid
+                self.flags[pid] = False
 
             
     def spawn(self):
-        w = Process(target=self.worker_process, args=(self.pool, self.lock))
+        w = Process(target=self.worker_process, args=(self.pool, self.sem, self.queue, self.flags))
         w.daemon = True
-        print self.workers
         w.start()
         self.workers.add(w)
-        print "Nuevo proceso: ", w.name
+        self.flags[w.pid] = True
         
     def count_spare_servers(self):
         return len(self.workers) - len(self.pool.get_active())
